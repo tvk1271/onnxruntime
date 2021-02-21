@@ -6,6 +6,7 @@
 #include <memory>
 #include <sstream>
 #include <thread>
+#include <ctime>
 
 #include "core/common/logging/logging.h"
 #include "core/common/logging/sinks/clog_sink.h"
@@ -829,6 +830,34 @@ Status TrainingRunner::TrainingLoop(IDataLoader& training_data_loader, IDataLoad
 #if defined(USE_CUDA) && defined(ORT_USE_NCCL) && defined(USE_NCCL_P2P)
           nccl_service.Reset();
 #endif
+
+
+	  // --- inserted code for investigating perf drop
+          auto rank = MPIContext::GetInstance().GetWorldRank();
+	  if (rank == 0) {
+
+	    static auto init = std::chrono::high_resolution_clock::now();
+	    static auto prev = std::chrono::high_resolution_clock::now();
+	    static bool firsttime = true;
+
+	    auto curr = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> duration_seconds = curr - prev;
+            std::chrono::duration<double> timestamp_seconds = curr - init;
+	    prev = curr;
+    
+	    if (!firsttime) {
+  	      double throughput = params_.batch_size * params_.gradient_accumulation_steps / duration_seconds.count(); 
+     	      printf("grep_globalstep %lu\n", weight_update_step_count_);
+  	      printf("grep_time %.6f\n", timestamp_seconds.count());
+  	      printf("grep_timestamp %lu\n", (unsigned long)time(NULL)); 
+  	      printf("grep_throughput %.6f\n", throughput);
+	    }
+	    else {
+	      firsttime = false;
+	    }
+	  }
+	  // -- end insertion
+
         } else {
           ORT_RETURN_IF_ERROR(PrepareFeedNamesAndFeeds(GradientAccumulateStep,
                                                        training_data_loader,
@@ -853,20 +882,20 @@ Status TrainingRunner::TrainingLoop(IDataLoader& training_data_loader, IDataLoad
           stabilized_total_time += duration_seconds.count();
         }
 
-        printf("Stage %d, Round %d, Step: %d, epoch: %d, batch: %d/%d, shard_iteration: %d/%d, time: %.2f ms, throughput: %.2f ex/sec \n",
-               pipeline_context_.pipeline_stage_id,
-               static_cast<int>(round_),
-               static_cast<int>(step_),
-               static_cast<int>(epoch),
-               static_cast<int>(batch),
-               static_cast<int>(batch_num_cur_shard),
-               static_cast<int>(shard_it + 1),
-               static_cast<int>(num_shards_to_visit),
-               duration_seconds.count() * 1000,
-               params_.batch_size * (step_ - step_start) / total_time);
-        printf("Training data range: [%d - %d)\n",
-               static_cast<int>(batch * params_.batch_size),
-               static_cast<int>((batch + 1) * params_.batch_size - 1));
+//        printf("Stage %d, Round %d, Step: %d, epoch: %d, batch: %d/%d, shard_iteration: %d/%d, time: %.2f ms, throughput: %.2f ex/sec \n",
+//               pipeline_context_.pipeline_stage_id,
+//               static_cast<int>(round_),
+//               static_cast<int>(step_),
+//               static_cast<int>(epoch),
+//               static_cast<int>(batch),
+//               static_cast<int>(batch_num_cur_shard),
+//               static_cast<int>(shard_it + 1),
+//               static_cast<int>(num_shards_to_visit),
+//               duration_seconds.count() * 1000,
+//               params_.batch_size * (step_ - step_start) / total_time);
+//        printf("Training data range: [%d - %d)\n",
+//               static_cast<int>(batch * params_.batch_size),
+//               static_cast<int>((batch + 1) * params_.batch_size - 1));
 
         if (test_data_loader &&
             params_.do_eval && step_ % params_.evaluation_period == 0) {

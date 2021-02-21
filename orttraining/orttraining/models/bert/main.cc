@@ -674,7 +674,7 @@ void setup_training_params(BertParameters& params) {
   if (params.EnableTensorboard())
     tensorboard = std::make_shared<EventWriter>(params.log_dir);
 
-  params.post_evaluation_callback = [tensorboard](size_t num_samples, size_t step, const std::string tag) {
+  params.post_evaluation_callback = [tensorboard, params](size_t num_samples, size_t step, const std::string tag) {
     if (tensorboard != nullptr) {
       for (const std::string& summary : summary_loss) {
         tensorboard->AddSummary(summary, step, tag);
@@ -687,6 +687,11 @@ void setup_training_params(BertParameters& params) {
            total_loss,
            mlm_loss,
            nsp_loss);
+
+    if (MPIContext::GetInstance().GetWorldRank() == 0) {
+	printf("grep_loss %0.04f\n", total_loss);
+    }
+    
     total_loss = 0.0f;
     mlm_loss = 0.0f;
     nsp_loss = 0.0f;

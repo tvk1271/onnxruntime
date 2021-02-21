@@ -5,7 +5,10 @@
 #include "core/platform/env.h"
 #include "core/util/protobuf_parsing_utils.h"
 #include "orttraining/models/runner/data_loader.h"
+#include "orttraining/core/framework/communication/mpi/mpi_context.h"
 #include <fstream>
+#include <ctime>
+#include <cstdio>
 
 namespace onnxruntime {
 namespace training {
@@ -142,6 +145,9 @@ void DataLoader::LoadAndRemoveInternalAsync(size_t index_to_load, bool need_remo
 }
 
 Status DataLoader::LoadFile(const PathString& file_path, std::shared_ptr<DataSet>& data_set) {
+
+  printf("grep_loadfile %lu %d:%s\n", (unsigned long)time(NULL), MPIContext::GetInstance().GetWorldRank(), file_path.c_str());
+
   int tensor_fd;
   ORT_RETURN_IF_ERROR(Env::Default().FileOpenRd(file_path, tensor_fd));
   FileInputStream f(tensor_fd);
