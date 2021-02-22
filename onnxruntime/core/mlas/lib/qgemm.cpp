@@ -2161,7 +2161,7 @@ MLAS_FORCEINLINE
 void
 MlasGemmU8X8CopyPackBProcessUdot(
     MLAS_GEMM_U8X8_KERNEL_UDOT::PackedBType* D,
-    int8x8_t BytesRow[4],
+    uint8x8_t BytesRow[4],
     uint8x16_t BitFlipVector,
     uint32x4_t ColumnSums[2]
     )
@@ -2193,7 +2193,7 @@ MlasGemmU8X8CopyPackB<MLAS_GEMM_U8X8_KERNEL_UDOT>(
 {
     const uint8x16_t ZeroVector = vmovq_n_u8(0);
     const uint8x16_t BitFlipVector = vdupq_n_u8(BIsSigned ? 0x80 : 0);
-    int8x8_t BytesRow[4];
+    uint8x8_t BytesRow[4];
 
     //
     // Process 8 columns of matrix B in a loop.
