@@ -17,6 +17,11 @@ Abstract:
 
 #include "mlasi.h"
 
+#if defined(MLAS_TARGET_ARM64) && defined(__linux__)
+#include <sys/auxv.h>
+#include <asm/hwcap.h>
+#endif
+
 //
 // Stores the platform information.
 //
@@ -229,7 +234,7 @@ Return Value:
                 this->ConvDepthwiseU8S8Kernel = MlasConvDepthwiseKernelAvx2<int8_t>;
                 this->ConvDepthwiseU8U8Kernel = MlasConvDepthwiseKernelAvx2<uint8_t>;
                 this->ComputeSumExpF32Kernel = MlasComputeSumExpF32KernelFma3;
-                
+
                 //
                 // Check if the processor supports Hybrid core architecture.
                 //
@@ -325,6 +330,26 @@ Return Value:
     }
 
 #endif // MLAS_TARGET_AMD64_IX86
+
+#if defined(MLAS_TARGET_ARM64)
+
+    this->GemmU8X8Operation = MlasGemmU8X8Operation<MLAS_GEMM_U8X8_KERNEL_NEON>;
+    this->GemmU8X8PackedOperation = MlasGemmU8X8PackedOperation<MLAS_GEMM_U8X8_KERNEL_NEON>;
+
+#if defined(MLAS_TARGET_ARM64) && defined(__linux__) && defined(HWCAP_ASIMDDP)
+
+    //
+    // Check if the processor supports ASIMD dot product instructions.
+    //
+
+    if ((getauxval(AT_HWCAP) & HWCAP_ASIMDDP) != 0) {
+        this->GemmU8X8Operation = MlasGemmU8X8Operation<MLAS_GEMM_U8X8_KERNEL_UDOT>;
+        this->GemmU8X8PackedOperation = MlasGemmU8X8PackedOperation<MLAS_GEMM_U8X8_KERNEL_UDOT>;
+    }
+
+#endif
+
+#endif
 
 }
 

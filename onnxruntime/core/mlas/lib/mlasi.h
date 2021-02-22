@@ -265,7 +265,7 @@ size_t
     size_t ldc,
     const int32_t* RowSumVector,
     const int32_t* ColumnSumVector,
-    int32_t DepthValue,
+    const int32_t* ZeroPointB,
     bool ZeroMode
     );
 
@@ -296,7 +296,7 @@ size_t
     size_t ldc,
     const int32_t* RowSumVector,
     const int32_t* ColumnSumVector,
-    int32_t DepthValue,
+    const int32_t* ZeroPointB,
     bool ZeroMode
     );
 
@@ -703,6 +703,8 @@ MlasSgemmOperation(
 struct MLAS_GEMM_U8X8_KERNEL_SSE;
 struct MLAS_GEMM_U8S8_KERNEL_AVX2;
 struct MLAS_GEMM_U8U8_KERNEL_AVX2;
+struct MLAS_GEMM_U8X8_KERNEL_NEON;
+struct MLAS_GEMM_U8X8_KERNEL_UDOT;
 
 template<typename KernelType>
 void
@@ -799,6 +801,11 @@ struct MLAS_PLATFORM {
     uint32_t MaximumThreadCount;
 #else
     static constexpr uint32_t MaximumThreadCount = MLAS_MAXIMUM_THREAD_COUNT;
+#endif
+
+#if defined(MLAS_TARGET_ARM64)
+    PMLAS_GEMM_U8X8_OPERATION GemmU8X8Operation;
+    PMLAS_GEMM_U8X8_OPERATION GemmU8X8PackedOperation;
 #endif
 };
 

@@ -25,7 +25,7 @@ Abstract:
 // Stack frame layout for the U8X8 kernel.
 //
 
-        .equ    .LGemmU8X8KernelFrame_SavedGeneralRegisters, (6 * 4)
+        .equ    .LGemmU8X8KernelFrame_SavedGeneralRegisters, (7 * 4)
         .equ    .LGemmU8X8KernelFrame_SavedNeonRegisters, (8 * 8)
         .equ    .LGemmU8X8KernelFrame_SavedRegisters, .LGemmU8X8KernelFrame_SavedGeneralRegisters + .LGemmU8X8KernelFrame_SavedNeonRegisters
         .equ    .LGemmU8X8KernelFrame_CountM, 0 + .LGemmU8X8KernelFrame_SavedRegisters
@@ -33,7 +33,7 @@ Abstract:
         .equ    .LGemmU8X8KernelFrame_ldc, 8 + .LGemmU8X8KernelFrame_SavedRegisters
         .equ    .LGemmU8X8KernelFrame_RowSumBuffer, 12 + .LGemmU8X8KernelFrame_SavedRegisters
         .equ    .LGemmU8X8KernelFrame_ColumnSumBuffer, 16 + .LGemmU8X8KernelFrame_SavedRegisters
-        .equ    .LGemmU8X8KernelFrame_DepthValue, 20 + .LGemmU8X8KernelFrame_SavedRegisters
+        .equ    .LGemmU8X8KernelFrame_ZeroPointB, 20 + .LGemmU8X8KernelFrame_SavedRegisters
         .equ    .LGemmU8X8KernelFrame_ZeroMode, 24 + .LGemmU8X8KernelFrame_SavedRegisters
 
         .text
@@ -95,26 +95,24 @@ Return Value:
 //
 //      q0-q1 (d0-d3)       matrix B data
 //      q2-q3 (d4-d7)       matrix A data
-//      q4 (d8-d9)          packed matrix B data
-//      q5 (d10-d11)        RowSumBufferData + DepthValue
+//      q4 (d8-d9)          packed matrix A data
+//      q5 (d10-d11)        RowSumBuffer data
 //      q6-q7 (d12-d15)     ColumnSumBuffer data
 //      q8-q15              accumulators[4][2]
 //
 
-        push    {r4,r5,r6,r7,r8,r10}
+        push    {r4,r5,r6,r7,r8,r9,r10}
         vpush   {d8-d15}
         ldr     r4,[sp,#.LGemmU8X8KernelFrame_CountM]
         ldr     r5,[sp,#.LGemmU8X8KernelFrame_ZeroMode]
-        ldr     r7,[sp,#.LGemmU8X8KernelFrame_RowSumBuffer]
+        ldr     r7,[sp,#.LGemmU8X8KernelFrame_ZeroPointB]
         ldr     r8,[sp,#.LGemmU8X8KernelFrame_ColumnSumBuffer]
-        vldr    s0,[sp,#.LGemmU8X8KernelFrame_DepthValue]
+        ldr     r9,[sp,#.LGemmU8X8KernelFrame_RowSumBuffer]
         ldr     r10,[sp,#.LGemmU8X8KernelFrame_ldc]
         ldr     r12,[sp,#.LGemmU8X8KernelFrame_CountN]
-        vdup.32 q5,d0[0]                    // broadcast DepthValue
-        vld1.32 {d12-d13},[r7]
+        vld1.32 {d10-d11},[r9]              // load RowSumBuffer
         mov     r6,r0
-        mov     r7,r3
-        vadd.u32 q5,q5,q6                   // add row fixups and DepthValue
+        mov     r9,r3
         cmp     r4,#1                       // CountM == 1?
         beq     .LGemmU8X8.M1.ProcessNextColumnLoop
         cmp     r4,#4                       // CountM < 4?
@@ -128,12 +126,36 @@ Return Value:
         vldr    d0,[r1]                     // load packed B0
         mov     r0,r6                       // reload matrix A
         vld1.32 {d12-d15},[r8]!             // load ColumnSumBuffer
-        mov     r3,r7                       // reload PackedCountK
+        mov     r3,r9                       // reload PackedCountK
         vmovl.u8 q0,d0
         vdup.32 q9,d10[0]
         vdup.32 q11,d10[1]
         vdup.32 q13,d11[0]
         vdup.32 q15,d11[1]
+        cbz     r7,.LGemmU8X8.M4.SkipScaleByZeroPointB
+        vld1.32 {d8-d9},[r7]!               // load ZeroPointB0
+        vmul.u32 q8,q9,q4
+        vmul.u32 q10,q11,q4
+        vmul.u32 q12,q13,q4
+        vmul.u32 q14,q15,q4
+        vld1.32 {d8-d9},[r7]!               // load ZeroPointB1
+        vmul.u32 q9,q9,q4
+        vmul.u32 q11,q11,q4
+        vmul.u32 q13,q13,q4
+        vmul.u32 q15,q15,q4
+        vldr    d8,[r0]                     // load first packed A0
+        vadd.u32 q8,q8,q6
+        vadd.u32 q9,q9,q7
+        vadd.u32 q10,q10,q6
+        vadd.u32 q11,q11,q7
+        vldr    d9,[r0,#8]                  // load first packed A1
+        vadd.u32 q12,q12,q6
+        vadd.u32 q13,q13,q7
+        vadd.u32 q14,q14,q6
+        vadd.u32 q15,q15,q7
+        b       .LGemmU8X8.M4.ComputeBlockLoop
+
+.LGemmU8X8.M4.SkipScaleByZeroPointB:
         vldr    d8,[r0]                     // load first packed A0
         vadd.u32 q8,q9,q6
         vadd.u32 q9,q9,q7
@@ -244,7 +266,7 @@ Return Value:
 .LGemmU8X8.M4.ExitKernel:
         mov     r0,#4                       // return number of rows handled
         vpop    {d8-d15}
-        pop     {r4,r5,r6,r7,r8,r10}
+        pop     {r4,r5,r6,r7,r8,r9,r10}
         bx      lr
 
 //
@@ -353,10 +375,24 @@ Return Value:
         vldr    d0,[r1]                     // load packed B0
         mov     r0,r6                       // reload matrix A
         vld1.32 {d12-d15},[r8]!             // load ColumnSumBuffer
-        mov     r3,r7                       // reload PackedCountK
+        mov     r3,r9                       // reload PackedCountK
         vmovl.u8 q0,d0
         vdup.32 q9,d10[0]
         vdup.32 q11,d10[1]
+        cbz     r7,.LGemmU8X8.M2.SkipScaleByZeroPointB
+        vld1.32 {d28-d31},[r7]!             // load ZeroPointB
+        vmul.u32 q8,q9,q14
+        vmul.u32 q9,q9,q15
+        vmul.u32 q10,q11,q14
+        vmul.u32 q11,q11,q15
+        vld1.32 d8,[r0]!                    // load first packed A0
+        vadd.u32 q8,q8,q6
+        vadd.u32 q9,q9,q7
+        vadd.u32 q10,q10,q6
+        vadd.u32 q11,q11,q7
+        b       .LGemmU8X8.M2.ComputeBlockLoop
+
+.LGemmU8X8.M2.SkipScaleByZeroPointB:
         vld1.32 d8,[r0]!                    // load first packed A0
         vadd.u32 q8,q9,q6
         vadd.u32 q9,q9,q7
@@ -425,7 +461,7 @@ Return Value:
 .LGemmU8X8.M2.ExitKernel:
         mov     r0,#2                       // return number of rows handled
         vpop    {d8-d15}
-        pop     {r4,r5,r6,r7,r8,r10}
+        pop     {r4,r5,r6,r7,r8,r9,r10}
         bx      lr
 
 //
@@ -502,9 +538,19 @@ Return Value:
         vldr    d0,[r1]                     // load packed B0
         mov     r0,r6                       // reload matrix A
         vld1.32 {d12-d15},[r8]!             // load ColumnSumBuffer
-        mov     r3,r7                       // reload PackedCountK
+        mov     r3,r9                       // reload PackedCountK
         vmovl.u8 q0,d0
         vdup.32 q9,d10[0]
+        cbz     r7,.LGemmU8X8.M1.SkipScaleByZeroPointB
+        vld1.32 {d28-d31},[r7]!             // load ZeroPointB
+        vmul.u32 q8,q9,q14
+        vmul.u32 q9,q9,q15
+        vld1.32 d8[0],[r0]!                 // load first packed A0
+        vadd.u32 q8,q8,q6
+        vadd.u32 q9,q9,q7
+        b       .LGemmU8X8.M1.ComputeBlockLoop
+
+.LGemmU8X8.M1.SkipScaleByZeroPointB:
         vld1.32 d8[0],[r0]!                 // load first packed A0
         vadd.u32 q8,q9,q6
         vadd.u32 q9,q9,q7
@@ -554,7 +600,7 @@ Return Value:
 .LGemmU8X8.M1.ExitKernel:
         mov     r0,#1                       // return number of rows handled
         vpop    {d8-d15}
-        pop     {r4,r5,r6,r7,r8,r10}
+        pop     {r4,r5,r6,r7,r8,r9,r10}
         bx      lr
 
 //
