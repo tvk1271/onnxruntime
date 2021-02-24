@@ -131,7 +131,8 @@ CUDAExecutionProvider::CUDAExecutionProvider(const CUDAExecutionProviderInfo& in
     external_stream_ = true;
     stream_ = static_cast<cudaStream_t>(info.user_compute_stream);
   } else {
-    CUDA_CALL_THROW(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking));
+    // CUDA_CALL_THROW(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking));
+    stream_ = nullptr;
   }
 
   size_t free = 0;
