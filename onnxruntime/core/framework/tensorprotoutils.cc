@@ -594,13 +594,6 @@ static Status GetFileContent(
   return Status::OK();
 }
 
-static void MoveOrtCallback(OrtCallback& from, OrtCallback& to) {
-  to.f = from.f;
-  to.param = from.param;
-  from.f = nullptr;
-  from.param = nullptr;
-}
-
 #define CASE_PROTO(X, Y)                                                      \
   case ONNX_NAMESPACE::TensorProto_DataType::TensorProto_DataType_##X:        \
     ORT_RETURN_IF_ERROR(                                                      \
@@ -656,10 +649,7 @@ Status TensorProtoToMLValue(const Env& env, const ORTCHAR_T* model_path,
       //raw_data = buffer.release();
       raw_data_len = tensor_proto.raw_data().size();
     }
-    if (endian::native == endian::little && raw_data != nullptr && deleter_for_file_data.d.f != nullptr) {
-      tensor_data = raw_data;
-      MoveOrtCallback(deleter_for_file_data.d, deleter);
-    } else {
+    {
       void* preallocated = m.GetBuffer();
       size_t preallocated_size = m.GetLen();
       int64_t tensor_size = 1;
@@ -706,6 +696,10 @@ Status TensorProtoToMLValue(const Env& env, const ORTCHAR_T* model_path,
               return Status(common::ONNXRUNTIME, common::FAIL, "initialize preallocated buffer failed");
             }
 
+            //This creates an implicity restriction that is hard to enforce:
+            //  this deleter must be called before the preallocated buffer is released, or else
+            //  we get a potention memory corruption. Prepacking and other features introduce
+            //  the need to release buffer earlier, making this even more tricky.
             deleter.f = UnInitTensor;
             deleter.param = new UnInitializeParam{preallocated, preallocated_size, ele_type};
           }
